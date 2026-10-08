@@ -10,10 +10,11 @@ import { pickFaces, bulkBays, subBays, byId, DOCKS, dockById, WEEK_REPL, WINS, T
 const MemoScene = memo(Scene)
 const pad = (n) => String(n).padStart(2, '0')
 const clock = (t) => { const s = 14 * 3600 + 32 * 60 + Math.floor(t); return `${pad(Math.floor(s / 3600) % 24)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}` }
-const MODES = [['fill', 'Fill'], ['heat', 'Pick heat'], ['repl', 'Replen'], ['slot', 'Slot fit'], ['safety', 'Safety']]
+const MODES = [['real', 'Realistic'], ['fill', 'Fill'], ['heat', 'Pick heat'], ['repl', 'Replen'], ['slot', 'Slot fit'], ['safety', 'Safety']]
 const VIEW_BTNS = [['overview', 'Overview'], ['top', 'Top'], ['pick', 'Pick'], ['pack', 'Pack'], ['bulk', 'Bulk'], ['docks', 'Docks'], ['yard', 'Yard'], ['transfer', 'Transfer']]
 const VIEW_KEYS = VIEW_BTNS.map((v) => v[0])
 const HINTS = {
+  real: 'The hall as it looks: pallets, trucks, forklifts and people. Switch to a layer on the right to analyse stock, demand, replenishment, slot sizes or safety.',
   fill: 'Block height is how full a pick face is. Beacons mark faces waiting for replenishment: orange waiting, blue a runner on the way.',
   heat: 'Bars show daily demand per pick face. Tall bars far from the outbound wall (west) are walking time you pay for.',
   repl: 'Bars show replenishment tasks per week. Tall bars are faces that run empty often.',
@@ -309,7 +310,7 @@ const HASH = new URLSearchParams(typeof location !== 'undefined' ? location.hash
 export default function App() {
   const dark = useDark()
   const T = THEMES[dark ? 'dark' : 'light']
-  const [mode, setMode] = useState(MODES.some((m) => m[0] === HASH.get('mode')) ? HASH.get('mode') : 'fill')
+  const [mode, setMode] = useState(MODES.some((m) => m[0] === HASH.get('mode')) ? HASH.get('mode') : 'real')
   const [sel, setSel] = useState({ type: 'pick', id: computeOpt().up[0].id })
   const [focus, setFocus] = useState(null)
   const [hover, setHover] = useState(null)
@@ -358,7 +359,7 @@ export default function App() {
   const st = sim.stats, opt = computeOpt(), alerts = alertsNow(), waiting = queued()
   const busyDocks = DOCKS.filter((d) => dockStatus(d).truck).length
   const bq = sim.benches.reduce((s, b) => s + b.queue, 0)
-  const leg = LEG[mode], stops = T[mode === 'fill' ? 'stock' : mode === 'repl' ? 'repl' : mode]
+  const leg = LEG[mode], stops = T[mode === 'fill' ? 'stock' : mode]
   const tabs = [['alerts', 'Alerts', alerts.length], ['replen', 'Replen', sim.tasks.length], ['flow', 'Flow', null], ['safety', 'Safety', sim.safety.nearMiss], ['transfers', 'Transfers', null], ['slots', 'Slots', null], ['wins', 'Wins', null]]
 
   return (
@@ -416,6 +417,7 @@ export default function App() {
           </div>
           <div className="legend card">
             {leg ? (<><span>{leg[0]}</span><i style={{ background: `linear-gradient(90deg,${stops.join(',')})` }} /><span>{leg[1]} {leg[2]}</span></>)
+              : mode === 'real' ? (<><span className="sw" style={{ background: '#c8a06a' }} />Cartons<span className="sw" style={{ background: '#7ea6d1' }} />Totes<span className="sw" style={{ background: T.fork }} />Forklifts<span className="sw" style={{ background: T.picker }} />People</>)
               : mode === 'slot' ? (<><span className="sw" style={{ background: T.slot.up }} />Bigger slot<span className="sw" style={{ background: T.slot.down }} />Too big<span className="sw" style={{ background: T.slot.ok }} />OK</>)
                 : (<><span className="sw" style={{ background: T.warn }} />Forklifts<span className="sw" style={{ background: T.ok }} />Pedestrians<span className="sw" style={{ background: T.cross }} />Gate</>)}
           </div>

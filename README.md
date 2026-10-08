@@ -20,6 +20,7 @@ The hall is the interface: a full-screen 3D map with a game-style HUD.
   system off in the Safety tab to see what happens without it (near misses start to count).
 - **Transfers.** Two shuttle trucks carry transfer orders from the south docks (XF-1, XF-2) to a sub-warehouse across the road
   and bring returns back. Open the Transfers tab for the order list.
+- **Realistic layer (default).** Natural colours: carrier-liveried trucks with opening rear doors, forklifts, walking people with carts, parked cars, trees, a gatehouse and road markings. The analysis layers (Fill, Pick heat, Replen, Slot fit, Safety) recolour the same scene.
 - Click a pick face, bulk bay, person, forklift, pack bench or truck to open its unit card with commands
   (replenish now, upsize slot, follow, move a waiting truck to a free dock).
 - Minimap bottom right: click to move the camera. Site switcher top left (three simulated sites).
@@ -38,5 +39,6 @@ The hall is the interface: a full-screen 3D map with a game-style HUD.
 - A pick face triggers replenishment at 35% of its capacity (`min` in `data.js`).
 - Bigger slot = yes when a face empties 2.5 times a day or more and a larger size exists (S 24, M 48, L 96 units).
   Estimated saving is the tasks per week you avoid by doubling capacity.
+
 
 
