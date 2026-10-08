@@ -12,11 +12,19 @@ React + React Three Fiber (three.js). One hall with a bulk zone (pallet racking)
 
 The hall is the interface: a full-screen 3D map with a game-style HUD.
 
-- Click a pick face, bulk bay, person or truck to open its unit card (status, ETA, stock) with commands:
-  replenish now, upsize slot, follow, move a waiting truck to a free dock.
-- Trucks arrive in the yard, dock, load or unload with a live progress badge and leave. Outbound trucks fill as pickers drop orders at staging.
+- **Flows.** Receiving unloads into inbound staging, forklifts put pallets away in bulk. Pickers walk the pick zone,
+  hand orders to six pack benches, packed orders wait in outbound staging and are loaded onto outbound trucks.
+  Runners replenish pick faces from the bulk reserve columns.
+- **Safety framework.** Forklifts and people share the bulk aisles under right-of-way locks (one type per aisle), gate lights,
+  slow and stop zones around every forklift, speed limits and zoning. Switch the Safety layer on to see it, and switch the
+  system off in the Safety tab to see what happens without it (near misses start to count).
+- **Transfers.** Two shuttle trucks carry transfer orders from the south docks (XF-1, XF-2) to a sub-warehouse across the road
+  and bring returns back. Open the Transfers tab for the order list.
+- Click a pick face, bulk bay, person, forklift, pack bench or truck to open its unit card with commands
+  (replenish now, upsize slot, follow, move a waiting truck to a free dock).
 - Minimap bottom right: click to move the camera. Site switcher top left (three simulated sites).
-- Keys: 1 to 6 camera views, space pause, F follow the selected unit, Esc clear.
+- Keys: 1 to 8 camera views, space pause, F follow the selected unit, Esc clear.
+- Start state from the URL hash, for example `#mode=safety&view=bulk&tab=safety`.
 
 ## Where things live
 
@@ -30,4 +38,5 @@ The hall is the interface: a full-screen 3D map with a game-style HUD.
 - A pick face triggers replenishment at 35% of its capacity (`min` in `data.js`).
 - Bigger slot = yes when a face empties 2.5 times a day or more and a larger size exists (S 24, M 48, L 96 units).
   Estimated saving is the tasks per week you avoid by doubling capacity.
+
 

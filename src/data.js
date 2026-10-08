@@ -20,14 +20,23 @@ const rnd = rng(SITE.seed)
 const pad = (n) => String(n).padStart(2, '0')
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 
-export const HALL = { w: 60, d: 40, wallH: 5 }
+export const HALL = { w: 66, d: 40, wallH: 5 }
 export const toWorld = (x, y) => [x - HALL.w / 2, y - HALL.d / 2] // hall metres -> scene x/z, centred on origin
 
 // Walking network: six east-west aisles (centre line y), a west lane next to outbound staging and a replenishment lane between the zones.
 export const A = [3, 10, 16, 22, 28, 36]
 export const XW = 4.5
 export const XM = 32
-export const STAGE_X = 2.4
+export const FORK_X = 42        // bulk columns east of this are the forklift zone, west of it the runner reserve
+export const XE = 62            // forklift-only lane along the east side of the bulk zone
+export const ROAD_Y = 55        // road between the main hall and the sub-warehouse
+export const slotX = (i) => 34 + 1.5 * i + 0.75 // staging slots in front of / behind the bulk zone (16 slots)
+export const INSTAGE_Y = 4.6    // inbound staging, between receiving and bulk
+export const OUTSTAGE_Y = 33.9  // bulk outbound / transfer staging
+export const PACK_BENCHES = Array.from({ length: 6 }, (_, i) => ({ id: 'PACK-' + (i + 1), x: 7 + i * 4, y: 38.4 }))
+export const SUBHALL = { x0: 22, y0: 70, w: 36, d: 22, wallH: 5 }
+export const SA = [72, 78, 84, 90]  // sub-warehouse aisles
+export const SX = [24, 52]          // sub-warehouse cross lanes
 
 export const SIZES = { S: 24, M: 48, L: 96 } // units a pick face holds
 const NEXT = { S: 'M', M: 'L' }
@@ -50,6 +59,17 @@ for (let r = 0; r < 5; r++)
     })
   }
 
+// ---- sub-warehouse (south, across the road): 3 rows x 10 bays ----
+export const subBays = []
+for (let r = 0; r < 3; r++)
+  for (let i = 0; i < 10; i++) {
+    const x0 = 26 + i * 2, y0 = 74 + r * 6, p = PRODUCTS[Math.floor(rnd() * PRODUCTS.length)], lv = rnd()
+    subBays.push({
+      kind: 'sub', id: 'S-' + 'ABC'[r] + pad(i + 1), x0, y0, cx: x0 + 1, cy: y0 + 1, w: 2, d: 2,
+      aisle: r + (i % 2), levels: lv < 0.1 ? 1 : lv < 0.35 ? 2 : lv < 0.7 ? 3 : 4, prod: p[0], sku: p[1],
+    })
+  }
+
 // ---- pick zone (west): shelving, 5 rows x 16 faces, one SKU per face ----
 export const pickFaces = []
 for (let r = 0; r < 5; r++)
@@ -62,7 +82,7 @@ for (let r = 0; r < 5; r++)
       aisle: r + (i % 2), heat, size: sr < 0.45 ? 'S' : sr < 0.85 ? 'M' : 'L', prod: p[0], sku: p[1],
     })
   }
-export const byId = Object.fromEntries([...pickFaces, ...bulkBays].map((b) => [b.id, b]))
+export const byId = Object.fromEntries([...pickFaces, ...bulkBays, ...subBays].map((b) => [b.id, b]))
 
 // Story data: promo SKUs sitting far from the outbound wall, slow SKUs holding prime spots next to it.
 ;['P-B15', 'P-D14', 'P-B16', 'P-D16', 'P-D13', 'P-C15'].forEach((id, i) => { byId[id].heat = 0.95 - i * 0.04 })
@@ -87,7 +107,9 @@ pickFaces.forEach((f) => {
   f.qty = Math.max(0, Math.round(f.cap * (0.25 + 0.75 * rnd())))     // current stock in the face
   recalcFit(f)
   f.replToday = Math.round(f.fills * 0.62)                           // tasks since 06:00
-  f.reserve = (bulkBays.filter((b) => b.sku === f.sku)[0] || bulkBays[Math.floor(rnd() * bulkBays.length)]).id
+  // reserve pallets for replenishment sit in the first four bulk columns, next to the replenishment lane (short walk for the runners)
+  const near = bulkBays.filter((b) => b.x0 < 42)
+  f.reserve = (near.filter((b) => b.sku === f.sku)[0] || near[Math.floor(rnd() * near.length)]).id
   f.task = null
 })
 pickFaces.forEach((f) => { if (f.id === 'P-D14') f.qty = 0 }) // one empty face to start with
@@ -115,6 +137,10 @@ export const DOCKS = [
   { id: 'OUT-2', wall: 'x', dir: 'out', a: 16, b: 20 },
   { id: 'OUT-3', wall: 'x', dir: 'out', a: 22, b: 26 },
   { id: 'OUT-4', wall: 'x', dir: 'out', a: 28, b: 32 },
+  { id: 'XF-1', wall: 's', dir: 'xfer', a: 38, b: 42 },   // main hall, south wall: transfers to the sub-warehouse
+  { id: 'XF-2', wall: 's', dir: 'xfer', a: 46, b: 50 },
+  { id: 'SD-1', wall: 'n2', dir: 'xfer', a: 30, b: 34 },  // sub-warehouse, north wall
+  { id: 'SD-2', wall: 'n2', dir: 'xfer', a: 38, b: 42 },
 ]
 // trucks present at the start; 'wait' means parked at the door but nobody is working it
 export const INIT_TRUCKS = [
@@ -148,20 +174,25 @@ export const WINS = [
 ]
 
 export const TOUR = [
-  { t: 'One hall, two zones', x: 'Bulk storage with pallet racking sits on the east side, close to the inbound docks. The pick zone with shelving sits on the west side, close to outbound. The purple lane between them is where replenishment crosses over. Drag to orbit, scroll to zoom.', mode: 'fill', sel: { type: 'pick', id: 'P-C08' }, view: 'overview' },
-  { t: 'Bulk zone', x: 'Pallets in four-level racking. Five bulk runners work here and take pallets to the pick zone when a face needs refilling.', mode: 'fill', sel: { type: 'bulk', id: 'B-C06' }, view: 'bulk' },
+  { t: 'One hall, two zones', x: 'Bulk storage with pallet racking sits on the east side, close to receiving. The pick zone with shelving sits on the west side. The purple lane between them is where replenishment crosses over. Drag to orbit, scroll to zoom.', mode: 'fill', sel: { type: 'pick', id: 'P-C08' }, view: 'overview' },
+  { t: 'Bulk zone and staging', x: 'Receiving unloads into the inbound staging row on the north side. Forklifts put pallets away into the racking and bring pallets for transfer orders to the bulk staging row on the south side.', mode: 'fill', sel: { type: 'bulk', id: 'B-C06' }, view: 'bulk' },
   { t: 'Pick zone', x: 'Twenty order pickers walk the aisles collecting order lines. The block in each face shows how full it is. Faces below their trigger level get an orange beacon.', mode: 'fill', sel: { type: 'pick', id: 'P-B09' }, view: 'pick' },
-  { t: 'Replenishment', x: 'The camera now rides behind runner RN-1. A beacon turns blue once a runner is on the way. When the pallet arrives the face is full again and the counter on the right goes up.', mode: 'fill', sel: { type: 'worker', id: 'RN-1' }, follow: 'RN-1', view: 'overview' },
-  { t: 'Pick heat', x: 'Bars above the faces show daily demand. Fast movers belong next to the outbound wall on the west side. The highlighted tall bars on the east side cost pickers the longest walk.', mode: 'heat', sel: { type: 'pick', id: hotFar[0].id }, focus: hotFar.map((f) => f.id), view: 'overview' },
-  { t: 'Bigger slot: yes or no', x: 'Orange faces empty at least 2.5 times a day. A bigger slot means fewer replenishment tasks. Click a face to see the advice and the estimated saving.', mode: 'slot', sel: { type: 'pick', id: OPT.up[0].id }, focus: OPT.up.map((f) => f.id), view: 'pick' },
+  { t: 'Replenishment', x: 'The camera rides behind runner RN-1. A beacon turns blue once a runner is on the way. When the pallet arrives the face is full again and the counter goes up.', mode: 'fill', sel: { type: 'worker', id: 'RN-1' }, follow: 'RN-1', view: 'overview' },
+  { t: 'Packing and outbound', x: 'Pickers hand finished orders to one of six pack benches in the south-west. Packed orders wait in outbound staging along the west wall and are loaded onto the outbound trucks.', mode: 'fill', sel: { type: 'pack', id: 'PACK-3' }, view: 'pack' },
+  { t: 'Forklifts and safety', x: 'Four forklifts work the bulk aisles. A safety framework keeps them away from people: one lane type per aisle, traffic lights at the aisle gates, and slow and stop zones around every forklift. Switch the Safety layer on to see them. The camera follows FK-1.', mode: 'safety', sel: { type: 'forklift', id: 'FK-1' }, follow: 'FK-1', view: 'bulk' },
+  { t: 'Transfers to the sub-warehouse', x: 'Shuttle trucks carry transfer orders from the south docks of the main hall to the sub-warehouse across the road, and bring returns back. Open the Transfers tab for the order list.', mode: 'fill', sel: { type: 'truck', id: 'TX-1' }, view: 'transfer' },
+  { t: 'Pick heat', x: 'Bars show daily demand per pick face. Fast movers belong next to the outbound wall on the west side. The highlighted tall bars on the east side cost pickers the longest walk.', mode: 'heat', sel: { type: 'pick', id: hotFar[0].id }, focus: hotFar.map((f) => f.id), view: 'overview' },
+  { t: 'Bigger slot: yes or no', x: 'Orange faces empty at least 2.5 times a day. A bigger slot means fewer replenishment tasks. Click a face to see the advice and the estimated saving.', mode: 'slot', sel: { type: 'pick', id: computeOpt().up[0].id }, focus: computeOpt().up.map((f) => f.id), view: 'pick' },
 ]
 
-// camera presets in scene coordinates
+// camera presets in scene coordinates (scene x = hall x - 33, scene z = hall y - 20)
 export const VIEWS = {
-  overview: { pos: [58, 48, 64], target: [0, 0, 2] },
-  top: { pos: [0.1, 78, 0.1], target: [0, 0, 0] },
-  pick: { pos: [-14, 20, 34], target: [-12, 0, 2] },
-  bulk: { pos: [46, 20, 34], target: [16, 0, 2] },
-  docks: { pos: [-6, 18, 30], target: [-24, 0, -10] },
-  yard: { pos: [60, 30, -50], target: [10, 0, -20] },
+  overview: { pos: [62, 50, 66], target: [2, 0, 4] },
+  top: { pos: [10, 130, 30], target: [10, 0, 28] },
+  pick: { pos: [-18, 22, 38], target: [-14, 0, 4] },
+  pack: { pos: [6, 13, 36], target: [-14, 0, 16] },
+  bulk: { pos: [52, 24, 40], target: [16, 0, 2] },
+  docks: { pos: [-8, 18, 32], target: [-26, 0, -6] },
+  yard: { pos: [62, 32, -52], target: [14, 0, -20] },
+  transfer: { pos: [80, 46, 58], target: [10, 0, 36] },
 }

@@ -3,7 +3,7 @@
    Concrete greys with a cool bias; accent blue is selection; orange marks "needs attention". */
 :root {
   --bg:#e2e6e8; --panel:rgba(244,246,247,.93); --solid:#f3f5f5; --ink:#15202a; --muted:#566772; --line:#c3ccd0;
-  --accent:#1c5fd1; --ok:#1d8548; --warn:#b3600a; --crit:#c2392a;
+  --accent:#1c5fd1; --ok:#1d8548; --warn:#b3600a; --crit:#c2392a; --lane:#7a54d6;
   --f-ui:'Barlow','Segoe UI',system-ui,sans-serif;
   --f-head:'Barlow Condensed','Arial Narrow',sans-serif;
   --f-mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
@@ -11,7 +11,7 @@
 }
 :root[data-theme="dark"] {
   --bg:#0d1317; --panel:rgba(19,27,33,.92); --solid:#151d23; --ink:#e5ecef; --muted:#8c9ea8; --line:#2b3942;
-  --accent:#5d9cff; --ok:#46c47c; --warn:#f0a63a; --crit:#ff6e5a;
+  --accent:#5d9cff; --ok:#46c47c; --warn:#f0a63a; --crit:#ff6e5a; --lane:#9b7bff;
   color-scheme: dark;
 }
 * { box-sizing: border-box }
@@ -61,10 +61,10 @@ button { cursor:pointer }
 .legend .sw { width:11px; height:11px; border-radius:2px; display:inline-block }
 
 /* left command panel */
-.left { position:absolute; top:66px; left:12px; width:350px; max-height:calc(100% - 66px - 12px - 190px); display:flex; flex-direction:column; overflow:hidden }
+.left { position:absolute; top:66px; left:12px; width:400px; max-height:calc(100% - 66px - 12px - 190px); display:flex; flex-direction:column; overflow:hidden }
 .lhead { display:flex; align-items:stretch; border-bottom:1px solid var(--line) }
 .tabs { display:flex; flex:1; min-width:0; overflow-x:auto; scrollbar-width:none }
-.tabs button { flex:1 1 auto; background:none; border:0; border-bottom:2px solid transparent; padding:8px 8px 6px; font:600 12px var(--f-head); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); white-space:nowrap }
+.tabs button { flex:1 1 auto; background:none; border:0; border-bottom:2px solid transparent; padding:8px 6px 6px; font:600 11.5px var(--f-head); letter-spacing:.04em; text-transform:uppercase; color:var(--muted); white-space:nowrap }
 .tabs button small { margin-left:5px; font:500 11px var(--f-mono); opacity:.8 }
 .tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--accent) }
 .fold { width:34px; background:none; border:0; border-left:1px solid var(--line); font:600 18px var(--f-mono); color:var(--muted) }
@@ -92,6 +92,9 @@ h2 { margin:0 0 6px; font:600 12px var(--f-head); letter-spacing:.1em; text-tran
 .task { display:grid; grid-template-columns:3.6em 1fr auto; gap:8px; align-items:baseline; text-align:left; background:none; border:0; padding:3px 2px; font-size:12.5px }
 .task:hover { background:color-mix(in srgb,var(--ink) 7%,transparent) }
 .task.done { opacity:.7 }
+.task.fk { grid-template-columns:3.2em 1fr auto }
+.rules { margin:0; padding-left:18px; font-size:12.5px; display:flex; flex-direction:column; gap:4px }
+.rules b { font-weight:600 }
 .cmds { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px }
 .opt { width:100%; border-collapse:collapse; font-size:13px }
 .opt th { text-align:left; font:600 11px var(--f-head); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:2px 4px 4px }
@@ -101,7 +104,7 @@ h2 { margin:0 0 6px; font:600 12px var(--f-head); letter-spacing:.1em; text-tran
 .opt button { background:none; border:0; padding:0; font:500 12.5px var(--f-mono); color:var(--accent); text-decoration:underline }
 
 /* event feed */
-.feed { position:absolute; left:12px; bottom:12px; width:350px; height:170px; padding:8px 12px; overflow:hidden }
+.feed { position:absolute; left:12px; bottom:12px; width:400px; height:170px; padding:8px 12px; overflow:hidden }
 .ev { display:grid; grid-template-columns:4.7em 8px 1fr; gap:7px; align-items:baseline; font-size:12px; line-height:1.35; padding:1px 0 }
 .ev span:last-child { min-width:0; overflow-wrap:anywhere }
 .ev .num { color:var(--muted); font-size:11px }
@@ -109,7 +112,7 @@ h2 { margin:0 0 6px; font:600 12px var(--f-head); letter-spacing:.1em; text-tran
 .ev i.warn { background:var(--warn) } .ev i.ok { background:var(--ok) } .ev i.crit { background:var(--crit) } .ev i.info { background:var(--accent) }
 
 /* selected unit and minimap */
-.unit { position:absolute; right:268px; bottom:12px; width:360px; max-height:calc(100% - 170px); overflow-y:auto; padding:10px 14px }
+.unit { position:absolute; right:246px; bottom:12px; width:360px; max-height:calc(100% - 170px); overflow-y:auto; padding:10px 14px }
 .mini { position:absolute; right:12px; bottom:12px; padding:4px; line-height:0 }
 .minimap { display:block; cursor:crosshair; border-radius:3px }
 .uhead { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin-bottom:6px }
@@ -121,7 +124,7 @@ dl { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:0; font-
 dt { color:var(--muted) }
 dd { margin:0; text-align:right; min-width:0; overflow-wrap:anywhere }
 
-.hint { position:absolute; left:386px; right:640px; bottom:14px; margin:0; font-size:12px; color:var(--muted); text-align:left; text-shadow:0 0 6px var(--bg),0 0 6px var(--bg) }
+.hint { position:absolute; left:436px; right:620px; bottom:14px; margin:0; font-size:12px; color:var(--muted); text-align:left; text-shadow:0 0 6px var(--bg),0 0 6px var(--bg) }
 .keys { opacity:.85 }
 
 /* 3D overlays */
