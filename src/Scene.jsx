@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { HALL, DOCKS, pickFaces, bulkBays, byId, toWorld } from './data.js'
-import { sim, stepSim, workerById } from './sim.js'
+import { sim, stepSim, workerById, dockStatus, truckSeconds } from './sim.js'
 import { THEMES, ramp } from './theme.js'
 
 const H = HALL
@@ -94,7 +94,7 @@ function PickZone({ mode, T, onPick, setHover }) {
       <Inst count={n} fill={stock} deps={D} live castShadow>{box}<meshStandardMaterial roughness={0.75} /></Inst>
       <Inst count={n} fill={bars} deps={D} live>{box}<meshStandardMaterial roughness={0.5} transparent opacity={0.85} /></Inst>
       <Inst count={n} fill={beacons} deps={D} live><sphereGeometry args={[0.2, 12, 12]} /><meshBasicMaterial /></Inst>
-      <Inst count={n} fill={flags} deps={D}><coneGeometry args={[0.32, 0.7, 12]} /><meshStandardMaterial roughness={0.5} /></Inst>
+      <Inst count={n} fill={flags} deps={D} live><coneGeometry args={[0.32, 0.7, 12]} /><meshStandardMaterial roughness={0.5} /></Inst>
       <Inst count={n} fill={hits}
         onClick={(e) => { e.stopPropagation(); onPick({ type: 'pick', id: pickFaces[e.instanceId].id }) }}
         onPointerMove={(e) => { e.stopPropagation(); setHover({ type: 'pick', id: pickFaces[e.instanceId].id }) }}
@@ -183,22 +183,56 @@ function Worker({ w, T, selected, onPick, setHover }) {
 }
 
 /* ---------- hall shell ---------- */
-function Trucks({ T }) {
-  const items = DOCKS.filter((d) => d.truck)
-  return items.map((d) => {
-    const c = (d.a + d.b) / 2
-    const inb = d.wall === 'y'
-    const [x, z] = inb ? toWorld(c, -6.2) : toWorld(-6.2, c)
-    return (
-      <group key={d.id} position={[x, 0, z]} rotation-y={inb ? 0 : -Math.PI / 2}>
-        <mesh position={[0, 1.9, 0.2]} castShadow><boxGeometry args={[2.6, 3.0, 9.6]} /><meshStandardMaterial color={T.truck} roughness={0.6} /></mesh>
-        <mesh position={[0, 1.4, -5.6]} castShadow><boxGeometry args={[2.4, 2.4, 2.0]} /><meshStandardMaterial color={T.cabTruck} /></mesh>
-        {[-3, 0, 3].flatMap((zz) => [-1.2, 1.2].map((xx) => (
-          <mesh key={zz + '_' + xx} position={[xx, 0.5, zz + 0.5]} rotation-z={Math.PI / 2}><cylinderGeometry args={[0.5, 0.5, 0.35, 14]} /><meshStandardMaterial color="#1b2227" /></mesh>
-        )))}
-      </group>
-    )
+function Truck({ t, T, selected, onPick, setHover }) {
+  const g = useRef(), lab = useRef(), fill = useRef(), acc = useRef(1)
+  useFrame((_, dt) => {
+    const [x, z] = toWorld(t.x, t.y)
+    g.current.position.set(x, 0, z)
+    g.current.rotation.y = -t.h
+    acc.current += dt
+    if (acc.current > 0.25) {
+      acc.current = 0
+      const eta = Math.max(0, Math.ceil(((1 - t.progress) * truckSeconds(t)) / 60))
+      const txt = t.st === 'waiting' ? `Waiting ${Math.round(t.waited / 60)} min` : t.st === 'queue' ? 'In yard queue' : t.st === 'arriving' ? 'Arriving' : t.st === 'leaving' ? 'Leaving'
+        : `${t.dir === 'in' ? 'Unloading' : 'Loading'} ${Math.round(t.progress * 100)}% · ${eta} min`
+      if (lab.current) lab.current.textContent = `${t.id} · ${txt}`
+      if (fill.current) { fill.current.style.width = (t.st === 'docked' ? t.progress * 100 : 0) + '%'; fill.current.style.background = t.st === 'waiting' ? T.warn : T.ok }
+    }
   })
+  return (
+    <group ref={g}
+      onClick={(e) => { e.stopPropagation(); onPick({ type: 'truck', id: t.id }) }}
+      onPointerOver={(e) => { e.stopPropagation(); setHover({ type: 'truck', id: t.id }) }}
+      onPointerOut={() => setHover(null)}>
+      <mesh position={[-1, 1.9, 0]} castShadow><boxGeometry args={[9.6, 3.0, 2.6]} /><meshStandardMaterial color={T.truck} roughness={0.6} /></mesh>
+      <mesh position={[5, 1.3, 0]} castShadow><boxGeometry args={[2.0, 2.4, 2.4]} /><meshStandardMaterial color={T.cabTruck} /></mesh>
+      <mesh position={[5.7, 1.6, 0]}><boxGeometry args={[0.6, 0.9, 2.3]} /><meshStandardMaterial color="#27333c" /></mesh>
+      {[-4, -2.7, 4.6].flatMap((xx) => [-1.2, 1.2].map((zz) => (
+        <mesh key={xx + '_' + zz} position={[xx, 0.5, zz]} rotation-x={Math.PI / 2}><cylinderGeometry args={[0.5, 0.5, 0.35, 14]} /><meshStandardMaterial color="#1b2227" /></mesh>
+      )))}
+      <Html position={[0, 4.6, 0]} center zIndexRange={[15, 5]} style={{ pointerEvents: 'none' }}>
+        <div className="tbadge"><span ref={lab} /><i><b ref={fill} /></i></div>
+      </Html>
+      {selected && <mesh rotation-x={-Math.PI / 2} position={[0, 0.05, 0]}><ringGeometry args={[4.9, 5.3, 40]} /><meshBasicMaterial color={T.accent} /></mesh>}
+    </group>
+  )
+}
+
+function Trucks({ T, sel, onPick, setHover }) {
+  const [, setV] = useState(0), seen = useRef(-1)
+  useFrame(() => { if (seen.current !== sim.truckVersion) { seen.current = sim.truckVersion; setV((v) => v + 1) } })
+  return sim.trucks.map((t) => <Truck key={t.id} t={t} T={T} selected={sel.type === 'truck' && sel.id === t.id} onPick={onPick} setHover={setHover} />)
+}
+
+function DockStrips({ T }) {
+  return DOCKS.map((d) => <DockStrip key={d.id} d={d} T={T} />)
+}
+function DockStrip({ d, T }) {
+  const m = useRef()
+  const [cx, cz] = d.wall === 'y' ? toWorld((d.a + d.b) / 2, 1.1) : toWorld(1.1, (d.a + d.b) / 2)
+  const size = d.wall === 'y' ? [d.b - d.a, 2.2] : [2.2, d.b - d.a]
+  useFrame(() => { if (m.current) m.current.color.set(dockStatus(d).cls === 'ok' ? T.ok : dockStatus(d).cls === 'warn' ? T.warn : T.neutral) })
+  return <mesh rotation-x={-Math.PI / 2} position={[cx, 0.02, cz]}><planeGeometry args={size} /><meshBasicMaterial ref={m} transparent opacity={0.5} /></mesh>
 }
 
 function Walls({ T }) {
@@ -234,16 +268,16 @@ function Floor({ T, sel }) {
   }
   return (
     <group>
+      <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow><planeGeometry args={[220, 180]} /><meshStandardMaterial color={T.yard} roughness={1} /></mesh>
+      {plane(-23, -20, 82, -14, T.road, 1, 'roadN', -0.03)}
+      {plane(-20, -20, -14, 62, T.road, 1, 'roadW', -0.025)}
       {plane(0, 0, H.w, H.d, T.floor, 1, 'f', 0)}
       {plane(5, 4.5, 31, 38, T.pickZone, 0.1, 'pz')}
       {plane(33, 4.5, 59.5, 38, T.bulkZone, 0.1, 'bz')}
       {plane(30.4, 2, 33.6, 38, T.lane, 0.22, 'lane')}
       {plane(0.4, 4, 3.6, 36, T.stage, 0.16, 'stage')}
       {plane(33, 0.4, 59.6, 5, T.receiving, 0.1, 'recv')}
-      {DOCKS.map((d) => {
-        const col = d.cls === 'ok' ? T.ok : d.cls === 'warn' ? T.warn : T.neutral
-        return d.wall === 'y' ? plane(d.a, 0, d.b, 2.2, col, 0.5, d.id, 0.02) : plane(0, d.a, 2.2, d.b, col, 0.5, d.id, 0.02)
-      })}
+      <DockStrips T={T} />
       {sel.type === 'dock' && (() => {
         const d = DOCKS.find((x) => x.id === sel.id), [cx, cz] = d.wall === 'y' ? toWorld((d.a + d.b) / 2, 1.1) : toWorld(1.1, (d.a + d.b) / 2)
         return <mesh rotation-x={-Math.PI / 2} position={[cx, 0.05, cz]}><ringGeometry args={[2.4, 2.7, 4, 1, Math.PI / 4]} /><meshBasicMaterial color={T.accent} /></mesh>
@@ -253,6 +287,7 @@ function Floor({ T, sel }) {
       {label('REPLEN LANE', 32, 39.2, T.lane)}
       {label('OUTBOUND STAGING', 2, 38.2, T.stage)}
       {label('RECEIVING', 46, 1.2, T.receiving)}
+      {label('YARD', 50, -26, T.muted)}
     </group>
   )
 }
@@ -283,7 +318,10 @@ function Focus({ ids, T }) {
 function Tip({ hover }) {
   if (!hover) return null
   let pos, text
-  if (hover.type === 'worker') {
+  if (hover.type === 'truck') {
+    const t = sim.trucks.find((x) => x.id === hover.id); if (!t) return null
+    const [x, z] = toWorld(t.x, t.y); pos = [x, 5.4, z]; text = `${t.id} · ${t.car}`
+  } else if (hover.type === 'worker') {
     const w = workerById[hover.id]; const [x, z] = toWorld(w.x, w.y); pos = [x, 2.3, z]; text = `${w.id} · ${w.status}`
   } else {
     const e = entity(hover), b = byId[hover.id]; pos = [e.pos[0], e.pos[1] + e.size[1] / 2 + 0.3, e.pos[2]]
@@ -302,18 +340,19 @@ function CameraRig({ view, follow, views }) {
   const { camera } = useThree()
   const tmp = useMemo(() => new THREE.Vector3(), [])
   useLayoutEffect(() => {
-    const v = views[view.name]
+    const v = view.custom || views[view.name]
     if (!v || !controls.current) return
     anim.current = { t: 0, p0: camera.position.clone(), t0: controls.current.target.clone(), p1: new THREE.Vector3(...v.pos), t1: new THREE.Vector3(...v.target) }
   }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
   useFrame((_, dt) => {
     const c = controls.current
     if (!c) return
-    if (follow) {
-      const w = workerById[follow], [x, z] = toWorld(w.x, w.y)
-      tmp.set(x - Math.cos(w.h) * 6, 3.4, z - Math.sin(w.h) * 6)
+    const sub = follow && (workerById[follow] || sim.trucks.find((t) => t.id === follow))
+    if (sub) {
+      const [x, z] = toWorld(sub.x, sub.y), back = sub.role ? 6 : 15, up = sub.role ? 3.4 : 8
+      tmp.set(x - Math.cos(sub.h) * back, up, z - Math.sin(sub.h) * back)
       camera.position.lerp(tmp, 0.05)
-      c.target.lerp(tmp.set(x + Math.cos(w.h) * 4, 1, z + Math.sin(w.h) * 4), 0.08)
+      c.target.lerp(tmp.set(x + Math.cos(sub.h) * 4, 1, z + Math.sin(sub.h) * 4), 0.08)
       anim.current = null
     } else if (anim.current) {
       const a = anim.current
@@ -343,14 +382,14 @@ export default function Scene({ dark, mode, sel, focus, hover, setHover, onPick,
       <CameraRig view={view} follow={follow} views={views} />
       <Floor T={T} sel={sel} />
       <Walls T={T} />
-      <Trucks T={T} />
+      <Trucks T={T} sel={sel} onPick={onPick} setHover={setHover} />
       <PickZone mode={mode} T={T} onPick={onPick} setHover={setHover} />
       <BulkZone mode={mode} T={T} onPick={onPick} setHover={setHover} />
       {sim.workers.map((w) => <Worker key={w.id} w={w} T={T} selected={sel.type === 'worker' && sel.id === w.id} onPick={onPick} setHover={setHover} />)}
       {focus && <Focus ids={focus} T={T} />}
       {pickSel && <Outline r={pickSel} color={T.accent} />}
       {hover && hover.id !== sel.id && (hover.type === 'pick' || hover.type === 'bulk') && <Outline r={hover} color={dark ? '#ffffff' : '#15202a'} />}
-      <Tip hover={hover} />
+      <Tip hover={hover} T={T} />
     </Canvas>
   )
 }

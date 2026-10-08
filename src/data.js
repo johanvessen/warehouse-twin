@@ -10,7 +10,13 @@ function rng(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-const rnd = rng(21)
+export const SITES = [
+  { id: 'venlo', name: 'Hub 07 Venlo', seed: 21 },
+  { id: 'tilburg', name: 'Hub 03 Tilburg', seed: 37 },
+  { id: 'rotterdam', name: 'Hub 11 Rotterdam', seed: 53 },
+]
+export const SITE = SITES.find((x) => typeof location !== 'undefined' && new URLSearchParams(location.search).get('site') === x.id) || SITES[0]
+const rnd = rng(SITE.seed)
 const pad = (n) => String(n).padStart(2, '0')
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 
@@ -62,29 +68,36 @@ export const byId = Object.fromEntries([...pickFaces, ...bulkBays].map((b) => [b
 ;['P-B15', 'P-D14', 'P-B16', 'P-D16', 'P-D13', 'P-C15'].forEach((id, i) => { byId[id].heat = 0.95 - i * 0.04 })
 ;['P-A02', 'P-C02', 'P-E03', 'P-A04', 'P-E04', 'P-C03'].forEach((id, i) => { byId[id].heat = 0.05 + i * 0.012 })
 
-pickFaces.forEach((f) => {
-  f.demand = Math.round(6 + Math.pow(f.heat, 1.4) * 150)            // units picked per day
+export function recalcFit(f) {
   f.cap = SIZES[f.size]
-  f.min = Math.round(f.cap * 0.35)                                   // replenishment trigger level
+  f.min = Math.round(f.cap * 0.35)                                    // replenishment trigger level
+  f.fills = f.demand / f.cap                                          // how many times a day the face empties
+  f.repl7 = Math.max(0, Math.round(f.fills * 7 * f.noise))            // replenishment tasks in the last 7 days
+  f.nextSize = NEXT[f.size]
+  if (f.fills >= 2.5 && f.size !== 'L') {
+    f.fit = 'up'
+    f.saved = Math.round((f.demand * 7) / f.cap - (f.demand * 7) / SIZES[f.nextSize])
+  } else if (f.size === 'L' && f.fills < 0.3) f.fit = 'down'
+  else f.fit = 'ok'
+}
+pickFaces.forEach((f) => {
+  f.demand = Math.round(6 + Math.pow(f.heat, 1.4) * 150)             // units picked per day
+  f.noise = 0.9 + 0.2 * rnd()
+  f.cap = SIZES[f.size]
   f.qty = Math.max(0, Math.round(f.cap * (0.25 + 0.75 * rnd())))     // current stock in the face
-  f.fills = f.demand / f.cap                                         // how many times a day the face empties
-  f.repl7 = Math.max(0, Math.round(f.fills * 7 * (0.9 + 0.2 * rnd()))) // replenishment tasks in the last 7 days
+  recalcFit(f)
   f.replToday = Math.round(f.fills * 0.62)                           // tasks since 06:00
   f.reserve = (bulkBays.filter((b) => b.sku === f.sku)[0] || bulkBays[Math.floor(rnd() * bulkBays.length)]).id
   f.task = null
-  if (f.fills >= 2.5 && f.size !== 'L') {
-    f.fit = 'up'; f.nextSize = NEXT[f.size]
-    f.saved = Math.round(f.demand * 7 / f.cap - (f.demand * 7) / SIZES[f.nextSize])
-  } else if (f.size === 'L' && f.fills < 0.3) f.fit = 'down'
-  else f.fit = 'ok'
 })
 pickFaces.forEach((f) => { if (f.id === 'P-D14') f.qty = 0 }) // one empty face to start with
 
-export const OPT = {
-  up: pickFaces.filter((f) => f.fit === 'up').sort((a, b) => b.saved - a.saved),
-  down: pickFaces.filter((f) => f.fit === 'down'),
+export const UPSIZED = { faces: 0, saved: 0 }
+export function computeOpt() {
+  const up = pickFaces.filter((f) => f.fit === 'up').sort((a, b) => b.saved - a.saved)
+  return { up, down: pickFaces.filter((f) => f.fit === 'down'), saved: up.reduce((t, f) => t + f.saved, 0) }
 }
-OPT.saved = OPT.up.reduce((s, f) => s + f.saved, 0)
+const OPT = computeOpt()
 
 export const SEED = {
   replToday: pickFaces.reduce((s, f) => s + f.replToday, 0),
@@ -94,14 +107,22 @@ export const SEED = {
 export const WEEK_REPL = pickFaces.reduce((s, f) => s + f.repl7, 0)
 
 export const DOCKS = [
-  { id: 'IN-1', wall: 'y', a: 36, b: 40, st: 'Unloading', cls: 'ok', truck: true, tr: 'TR-4821', car: 'Noordvaart Freight', p: 24, note: 'Started 14:05' },
-  { id: 'IN-2', wall: 'y', a: 42, b: 46, st: 'Waiting', cls: 'warn', truck: true, tr: 'TR-5107', car: 'Lek & Maas Transport', p: 18, note: '38 min past appointment' },
-  { id: 'IN-3', wall: 'y', a: 48, b: 52, st: 'Free', cls: 'mut', truck: false, note: 'Next booking 15:20' },
-  { id: 'IN-4', wall: 'y', a: 54, b: 58, st: 'Unloading', cls: 'ok', truck: true, tr: 'TR-4906', car: 'Brabant Cargo', p: 30, note: 'Started 14:19' },
-  { id: 'OUT-1', wall: 'x', a: 10, b: 14, st: 'Loading', cls: 'ok', truck: true, tr: 'TR-7730', car: 'Eurolijn Distribution', p: 26, note: 'Departs 14:50' },
-  { id: 'OUT-2', wall: 'x', a: 16, b: 20, st: 'Free', cls: 'mut', truck: false, note: 'Next booking 15:10' },
-  { id: 'OUT-3', wall: 'x', a: 22, b: 26, st: 'Loading', cls: 'ok', truck: true, tr: 'TR-7741', car: 'Zuid-Express', p: 14, note: 'Departs 15:05' },
-  { id: 'OUT-4', wall: 'x', a: 28, b: 32, st: 'Free', cls: 'mut', truck: false, note: 'Next booking 16:00' },
+  { id: 'IN-1', wall: 'y', dir: 'in', a: 36, b: 40 },
+  { id: 'IN-2', wall: 'y', dir: 'in', a: 42, b: 46 },
+  { id: 'IN-3', wall: 'y', dir: 'in', a: 48, b: 52 },
+  { id: 'IN-4', wall: 'y', dir: 'in', a: 54, b: 58 },
+  { id: 'OUT-1', wall: 'x', dir: 'out', a: 10, b: 14 },
+  { id: 'OUT-2', wall: 'x', dir: 'out', a: 16, b: 20 },
+  { id: 'OUT-3', wall: 'x', dir: 'out', a: 22, b: 26 },
+  { id: 'OUT-4', wall: 'x', dir: 'out', a: 28, b: 32 },
+]
+// trucks present at the start; 'wait' means parked at the door but nobody is working it
+export const INIT_TRUCKS = [
+  { id: 'TR-4821', dock: 'IN-1', dir: 'in', car: 'Noordvaart Freight', p: 24, progress: 0.35 },
+  { id: 'TR-5107', dock: 'IN-2', dir: 'in', car: 'Lek & Maas Transport', p: 18, progress: 0, wait: true },
+  { id: 'TR-4906', dock: 'IN-4', dir: 'in', car: 'Brabant Cargo', p: 30, progress: 0.6 },
+  { id: 'TR-7730', dock: 'OUT-1', dir: 'out', car: 'Eurolijn Distribution', p: 26, progress: 0.55 },
+  { id: 'TR-7741', dock: 'OUT-3', dir: 'out', car: 'Zuid-Express', p: 14, progress: 0.2 },
 ]
 export const dockById = Object.fromEntries(DOCKS.map((d) => [d.id, d]))
 
@@ -122,8 +143,8 @@ export const WINS = [
     mode: 'repl', focus: hottest.map((f) => f.id), sel: { type: 'pick', id: hottest[0].id }, view: 'pick',
     note: `These faces trigger replenishment at 35% and still run empty before the runner arrives. Trigger at 50% instead.` },
   { t: 'Move TR-5107 to free dock IN-3', d: 'Ends a 38 min wait at no cost',
-    mode: 'fill', sel: { type: 'dock', id: 'IN-2' }, view: 'docks',
-    note: 'IN-2 holds a truck 38 min past its slot while IN-3 is empty until 15:20.' },
+    mode: 'fill', sel: { type: 'truck', id: 'TR-5107' }, view: 'docks',
+    note: 'IN-2 holds a truck 38 min past its slot while IN-3 is empty. Select the truck and press Move to free dock.' },
 ]
 
 export const TOUR = [
@@ -137,9 +158,10 @@ export const TOUR = [
 
 // camera presets in scene coordinates
 export const VIEWS = {
-  overview: { pos: [50, 40, 54], target: [0, 0, 0] },
+  overview: { pos: [58, 48, 64], target: [0, 0, 2] },
   top: { pos: [0.1, 78, 0.1], target: [0, 0, 0] },
   pick: { pos: [-14, 20, 34], target: [-12, 0, 2] },
   bulk: { pos: [46, 20, 34], target: [16, 0, 2] },
-  docks: { pos: [-10, 16, 24], target: [-28, 1, -4] },
+  docks: { pos: [-6, 18, 30], target: [-24, 0, -10] },
+  yard: { pos: [60, 30, -50], target: [10, 0, -20] },
 }
